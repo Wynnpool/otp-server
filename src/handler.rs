@@ -153,7 +153,7 @@ pub fn handle_client(mut stream: TcpStream, favicon: Option<String>, redis_clien
                 "extra": [
                     {"text": "\n"},
                     {"text": "§6§lWynnpool Verification§r\n\n", "color": "gold"},
-                    {"text": "Thanks for connecting, ", "color": "gray"},
+                    {"text": "Hewoooo, ", "color": "gray"},
                     {"text": verified_name, "color": "green"},
                     {"text": "!\n\n", "color": "gray"},
                     {"text": "Your verification code is:\n", "color": "gray"},
