@@ -1,0 +1,15 @@
+[package]
+name = "wynnpool-verification-server"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+rand = "0.8.5"
+base64 = "0.21.0"
+byteorder = "1.4.3"
+redis = "0.22.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.96"
+dotenvy = "0.15"
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1.0", features = ["full"] }
