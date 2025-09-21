@@ -117,36 +117,43 @@ pub fn handle_client(mut stream: TcpStream, favicon: Option<String>, redis_clien
                 io::Error::new(io::ErrorKind::Other, format!("Redis connection failed: {}", e))
             })?;
             
-            // Check if player already has a valid code by looking up uuid -> code mapping
-            let uuid_key = format!("wynnpool:verify:uuid:{}", uuid);
-            let mut code: Option<String> = con.get(&uuid_key).unwrap_or(None);
+            // Check if player already has a valid code by searching all code hashes for this uuid
+            let mut code: Option<String> = None;
 
-            if let Some(ref existing_code) = code {
-                // Verify the code hasn't expired by checking the code hash
-                let code_key = format!("wynnpool:verify:{}", existing_code);
-                let existing_expires: Option<i64> = con.hget(&code_key, "expires").unwrap_or(None);
+            // Get current time once
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64;
 
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs() as i64;
-
-                if let Some(expires) = existing_expires {
-                    if now < expires {
-                        println!("Reusing existing code for {}: {}", verified_name, existing_code);
-                        // keep code as-is
-                    } else {
-                        // expired: generate a new code and replace mapping
-                        let new_code = generate_and_store_code(&mut con, &uuid, &verified_name);
-                        code = Some(new_code);
+            // Scan all verification keys for one that contains this uuid and is not expired.
+            // Keys are stored as `wynnpool:verify:<code>` and contain fields `uuid`, `name`, `expires`.
+            let keys: Vec<String> = con.keys("wynnpool:verify:*").unwrap_or(Vec::new());
+            for key in keys {
+                // Read the uuid field for this code
+                let key_uuid: Option<String> = con.hget(&key, "uuid").unwrap_or(None);
+                if let Some(kuuid) = key_uuid {
+                    if kuuid == uuid {
+                        let existing_expires: Option<i64> = con.hget(&key, "expires").unwrap_or(None);
+                        if let Some(expires) = existing_expires {
+                            if now < expires {
+                                // extract the code suffix from the key `wynnpool:verify:<code>`
+                                if let Some(pos) = key.rfind(':') {
+                                    let existing_code = key[pos+1..].to_string();
+                                    println!("Reusing existing code for {}: {}", verified_name, existing_code);
+                                    code = Some(existing_code);
+                                    break;
+                                }
+                            } else {
+                                // expired - ignore and continue scanning
+                            }
+                        }
                     }
-                } else {
-                    // No expires field found — generate a new code
-                    let new_code = generate_and_store_code(&mut con, &uuid, &verified_name);
-                    code = Some(new_code);
                 }
-            } else {
-                // No mapping exists; create a new code and mapping
+            }
+
+            if code.is_none() {
+                // No unexpired code found for this uuid; generate a new one
                 let new_code = generate_and_store_code(&mut con, &uuid, &verified_name);
                 code = Some(new_code);
             }

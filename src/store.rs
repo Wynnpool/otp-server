@@ -52,10 +52,5 @@ pub fn generate_and_store_code(con: &mut redis::Connection, uuid: &str, username
 
     // Set TTL for the code key
     let _: () = con.expire(&code_key, 900).unwrap();
-
-    // Store reverse mapping uuid -> code with same TTL
-    let _: () = con.set(&uuid_key, &code).unwrap();
-    let _: () = con.expire(&uuid_key, 900).unwrap();
-
     code
 }
