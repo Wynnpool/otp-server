@@ -117,35 +117,39 @@ pub fn handle_client(mut stream: TcpStream, favicon: Option<String>, redis_clien
                 io::Error::new(io::ErrorKind::Other, format!("Redis connection failed: {}", e))
             })?;
             
-            // Check if player already has a valid code
-            let redis_key = format!("wynnpool:verify:{}", uuid);
-            let existing_code: Option<String> = con.hget(&redis_key, "code").unwrap_or(None);
-            let existing_expires: Option<i64> = con.hget(&redis_key, "expires").unwrap_or(None);
-            
-            let code = if let (Some(code), Some(expires)) = (existing_code, existing_expires) {
+            // Check if player already has a valid code by looking up uuid -> code mapping
+            let uuid_key = format!("wynnpool:verify:uuid:{}", uuid);
+            let mut code: Option<String> = con.get(&uuid_key).unwrap_or(None);
+
+            if let Some(ref existing_code) = code {
+                // Verify the code hasn't expired by checking the code hash
+                let code_key = format!("wynnpool:verify:{}", existing_code);
+                let existing_expires: Option<i64> = con.hget(&code_key, "expires").unwrap_or(None);
+
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_secs() as i64;
-                
-                if now < expires {
-                    println!("Reusing existing code for {}: {}", verified_name, code);
-                    code
+
+                if let Some(expires) = existing_expires {
+                    if now < expires {
+                        println!("Reusing existing code for {}: {}", verified_name, existing_code);
+                        // keep code as-is
+                    } else {
+                        // expired: generate a new code and replace mapping
+                        let new_code = generate_and_store_code(&mut con, &uuid, &verified_name);
+                        code = Some(new_code);
+                    }
                 } else {
-                    generate_and_store_code(&mut con, &redis_key)
+                    // No expires field found — generate a new code
+                    let new_code = generate_and_store_code(&mut con, &uuid, &verified_name);
+                    code = Some(new_code);
                 }
             } else {
-                generate_and_store_code(&mut con, &redis_key)
-            };
-            
-            // Store player info in Redis
-            let _: () = con.hset_multiple(
-                &redis_key,
-                &[
-                    ("username", &verified_name),
-                    ("code", &code),
-                ]
-            ).map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Redis set failed: {}", e)))?;
+                // No mapping exists; create a new code and mapping
+                let new_code = generate_and_store_code(&mut con, &uuid, &verified_name);
+                code = Some(new_code);
+            }
             
             // Create kick message
             let kick_reason = json!({
@@ -157,7 +161,7 @@ pub fn handle_client(mut stream: TcpStream, favicon: Option<String>, redis_clien
                     {"text": verified_name, "color": "green"},
                     {"text": "!\n\n", "color": "gray"},
                     {"text": "Your verification code is:\n", "color": "gray"},
-                    {"text": format!("§l§e{}\n\n", code), "color": "yellow"},
+                    {"text": format!("§l§e{}\n\n", code.clone().unwrap_or_default()), "color": "yellow"},
                     {"text": "§7This code expires in 15 minutes", "color": "dark_gray"},
                     // {"text": uuid, "color": "dark_gray"}
                 ]
