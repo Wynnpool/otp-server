@@ -1,0 +1,31 @@
+services:
+  wynnpool-otp-server:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    restart: always 
+    environment:
+      - REDIS_URL=${REDIS_URL}
+      - SERVER_PORT=${SERVER_PORT}
+    networks:
+      - dokploy-network
+      - mc-bridge
+
+  gate: 
+    image: ghcr.io/minekube/gate:latest
+    restart: always 
+    ports:
+      - "25788:25788"
+    volumes:
+      - ./config.yaml:/config.yaml
+    networks:
+      - mc-bridge
+    depends_on:
+      wynnpool-otp-server:
+        condition: service_started
+
+networks:
+  dokploy-network:
+    external: true
+  mc-bridge:
+    driver: bridge
